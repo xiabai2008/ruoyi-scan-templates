@@ -1,0 +1,7 @@
+# 强制 LF 行尾（manifest SHA256 按 LF 计算，行尾转换会破坏签名校验）
+* text=auto eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
