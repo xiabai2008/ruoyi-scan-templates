@@ -1,6 +1,10 @@
 # Ruoyi-Scan 插件模板仓库
 
-[Ruoyi-Scan](https://github.com/xiabai2008/Ruoyi-Scan) 官方插件分发源（E5/F2）。
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/xiabai2008/ruoyi-scan-templates.svg?style=social&label=Star)](https://github.com/xiabai2008/ruoyi-scan-templates)
+[![GitHub forks](https://img.shields.io/github/forks/xiabai2008/ruoyi-scan-templates.svg?style=social&label=Fork)](https://github.com/xiabai2008/ruoyi-scan-templates)
+
+[Ruoyi-Scan](https://github.com/xiabai2008/Ruoyi-Scan) 官方插件分发源（E5/F2）：开源插件经 Ed25519 签名分发，构建防供应链投毒的插件生态。
 
 ## 结构
 
@@ -34,3 +38,7 @@ cp signing.pub ~/.ruoyi-scan/signing.pub
 4. 提交 PR（含测试）；合入后由维护者重新生成 manifest 并签名
 
 > ⚠️ 本仓库内容为可执行 Python 代码：安装前请人工审查；只信任本仓库 + 已验证的签名公钥。
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=xiabai2008/ruoyi-scan-templates&type=Date)](https://star-history.com/#xiabai2008/ruoyi-scan-templates&Date)
