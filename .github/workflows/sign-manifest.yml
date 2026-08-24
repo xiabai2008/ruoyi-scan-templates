@@ -25,15 +25,16 @@ jobs:
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
         run: |
-          printf '%s' "$SIGNING_KEY" > signing.key
-          chmod 600 signing.key
+          # 私钥写入工作区外（runner 临时目录），避免进入分发清单；用后即删
+          printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/signing.key"
+          chmod 600 "$RUNNER_TEMP/signing.key"
 
       - name: 生成签名 manifest
-        run: python scripts/sign_manifest.py --out-dir . --key-path signing.key
+        run: python scripts/sign_manifest.py --out-dir . --key-path "$RUNNER_TEMP/signing.key"
 
       - name: 提交签名 manifest（无变化则跳过）
         run: |
-          rm -f signing.key
+          rm -f "$RUNNER_TEMP/signing.key"
           if git diff --quiet manifest.json; then
             echo "manifest 无变化，跳过提交"
           else

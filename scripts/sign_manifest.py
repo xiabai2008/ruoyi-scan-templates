@@ -32,12 +32,17 @@ def sha256(path: str) -> str:
 
 
 def build_files(out_dir: str) -> dict:
-    """扫描仓库内容：排除 .git/ 与 manifest.json 自身（只描述分发内容）"""
+    """扫描仓库内容：排除 .git/、manifest.json 自身与私钥文件（只描述分发内容）
+
+    供应链安全：signing.key* 为发布私钥（含其 .pub 副产物），严禁进入分发清单；
+    signing.pub 是发布者公钥，保留在清单中供消费者下载。
+    """
     hashes = {}
+    _EXCLUDE_NAMES = ("manifest.json", "signing.key", "signing.key.pub")
     for root, dirs, names in os.walk(out_dir):
         dirs[:] = [d for d in dirs if d != ".git"]
         for n in sorted(names):
-            if n == "manifest.json":
+            if n in _EXCLUDE_NAMES:
                 continue
             p = os.path.join(root, n)
             rel = os.path.relpath(p, out_dir).replace("\\", "/")
