@@ -23,7 +23,7 @@
    ```
 
 4. **提交 PR** 到 [Ruoyi-Scan](https://github.com/xiabai2008/Ruoyi-Scan)（使用 POC 模板）
-5. 合入后维护者重新生成 `manifest.json` 并签名，本仓库自动更新
+5. 合入 `main` 后由 `.github/workflows/sign-manifest.yml` 自动重新生成 `manifest.json` 并签名（Ed25519 私钥存于 GitHub Secrets，永不进入仓库）
 
 ## POC 规范
 

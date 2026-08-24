@@ -1,12 +1,12 @@
 {
   "schema": "ruoyi-scan-plugin-repo",
-  "version": "1.0.0",
-  "generated_at": "2026-08-08 13:44:32",
+  "version": "1.1.0",
   "files": {
     ".gitattributes": "5feff625f669e36533e2aa3d3469b5ef669af5bb2f1d7e834b688807582a12f8",
-    "README.md": "08c793dde8230d1e9e82750fad6dff8da55423c0b0c194c595a7e6c755dc0466",
+    "CONTRIBUTING.md": "4086fe5cd5eaa7dc4b79f5c31ffc1597a67a7c392471d6e2aa7bc01867ba58be",
+    "README.md": "29763a36a45d47f69a7df4054909b6bb52699006010bdf39733d16f98bff9753",
     "plugins_meta.json": "8c14b207e48162a0e8e741f574b67482dd9d988b4da8e98fbcacdfdec17bf978",
-    "signing.pub": "0f850ee6ef53e92bd163ffeb791ae485d22f76b6a1025e1989ce822cf8a768ed",
+    "signing.pub": "6784756b032928f8e19c16356f5f876496363b122ef710873c63c4e8502db760",
     "plugins/common/__init__.py": "b39c56e9d6fb11f47cf95e57aea8444ea0c16aebe1d72076405d3278d5900059",
     "plugins/common/backup_scan.py": "41300ecf3e4b242f41643fece0df67b2e9da2f65e0dcaab80adaf40d02b0ad4c",
     "plugins/common/cors_misconfig.py": "2eae2b0b02d3a79d801a0c6393f7192731aaa0dfc247d431fcfd9c16ecf908c9",
@@ -48,7 +48,8 @@
     "plugins/spring/spring_boot_admin.py": "acd8140d19c7882a02355e8528e9e2cd767d162320c80ce31d31d1078c79f8fb",
     "plugins/spring/spring_cloud_config.py": "58a51ffef2e00baff5950b0cb96ef1a8515da4adb28023c7ba4f769a3bf5146f",
     "plugins/spring/spring_data_rest.py": "8e156171f791fa1e997e669f4efa4978ec30270140f1f42a6aece1e0cba891cf",
-    "plugins/spring/trace_leak.py": "301ce3abaac21324f3cfd156aa20b9c78a483ce9aad9f01b0841a7aea5d5fba3"
+    "plugins/spring/trace_leak.py": "301ce3abaac21324f3cfd156aa20b9c78a483ce9aad9f01b0841a7aea5d5fba3",
+    "scripts/sign_manifest.py": "9164cb4c5276ecff3314f468a8822e375f0f3530d93ab315e7adfc0fe072f337"
   },
-  "signature": "531efde474b1aabc2bab61e64da331817557049e2de6c9f08d8454503086eb90c555567844b4ab243c1b14a1d860b4a84d0f2f1a42b152ff7381bb68c737d507"
+  "signature": "e40b1437a45ac37cb3aa7648549f0f2b697dbe95c1ec872fbc00970a4d9e69ac3c6411a94462c591b5581839bb5fab6c054c89d7add408908b45150517ff7909"
 }
