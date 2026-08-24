@@ -6,7 +6,6 @@
     "CONTRIBUTING.md": "05c72a9d4bb2eea16389121d9a87fa4ea928478e67710e027701b7c780328280",
     "README.md": "12225b6ac5094d90a61c20d4035584273557399838eef00eb415af95fb562935",
     "plugins_meta.json": "8c14b207e48162a0e8e741f574b67482dd9d988b4da8e98fbcacdfdec17bf978",
-    "signing.key": "1434c3877d7133862cb767a6b49c0acb71447b0f56d9aa1034d1ae52dc55ae33",
     "signing.pub": "6784756b032928f8e19c16356f5f876496363b122ef710873c63c4e8502db760",
     "plugins/common/__init__.py": "b39c56e9d6fb11f47cf95e57aea8444ea0c16aebe1d72076405d3278d5900059",
     "plugins/common/backup_scan.py": "41300ecf3e4b242f41643fece0df67b2e9da2f65e0dcaab80adaf40d02b0ad4c",
@@ -50,8 +49,8 @@
     "plugins/spring/spring_cloud_config.py": "58a51ffef2e00baff5950b0cb96ef1a8515da4adb28023c7ba4f769a3bf5146f",
     "plugins/spring/spring_data_rest.py": "8e156171f791fa1e997e669f4efa4978ec30270140f1f42a6aece1e0cba891cf",
     "plugins/spring/trace_leak.py": "301ce3abaac21324f3cfd156aa20b9c78a483ce9aad9f01b0841a7aea5d5fba3",
-    ".github/workflows/sign-manifest.yml": "0f052e03a230e1748045e9e1442981d7945081c26bdc3129ea1a4096460c5be4",
-    "scripts/sign_manifest.py": "9164cb4c5276ecff3314f468a8822e375f0f3530d93ab315e7adfc0fe072f337"
+    ".github/workflows/sign-manifest.yml": "87c13e4408d72f7fe2c17ff491ebc0ae7b190294f668ab9b2a93ee5c9fe9144d",
+    "scripts/sign_manifest.py": "911ece762afe04e68e0930ce908984daa2b1a79fd0cf151755330a1fb50a8b51"
   },
-  "signature": "a93ce251822b8afee0e66a478ad5aa4d937fbbe7d3ad0d59f8ff15470c35d2f0ee818ce502273690579a55ea5de0593a533d20457f61e6b176af116cbd19af0d"
+  "signature": "f5acd064914805f84e859f5031a77c131559a8fd971f20626043a7f536045d6d40f1ba145a4ecfaa3ca3a5a66ced596f69ee77decc4009196d64628635fd6901"
 }
